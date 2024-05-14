@@ -5,6 +5,7 @@
 #include "Player.h"
 #include "Object.h"
 #include "DataMap.h"
+#include "ChallengeModes.h"
 
 using namespace Acore::ChatCommands;
 
@@ -62,13 +63,13 @@ public:
     }
 };
 
-class PlayerXpRate : public DataMap::Base
-{
-public:
-    PlayerXpRate() {}
-    PlayerXpRate(uint32 XPRate) : XPRate(XPRate) {}
-    uint32 XPRate = 1;
-};
+// class PlayerXpRate : public DataMap::Base
+// {
+// public:
+//     PlayerXpRate() {}
+//     PlayerXpRate(uint32 XPRate) : XPRate(XPRate) {}
+//     uint32 XPRate = 1;
+// };
 
 class IndividualXP : public PlayerScript
 {
@@ -81,7 +82,7 @@ public:
 
         if (!result)
         {
-            player->CustomData.GetDefault<PlayerXpRate>("IndividualXP")->XPRate = DefaultRate;
+            player->CustomData.Set("IndividualXP", new PlayerXpRate(DefaultRate));
         }
         else
         {
@@ -98,15 +99,49 @@ public:
         }
     }
 
-    void OnGiveXP(Player* player, uint32& amount, Unit* /*victim*/, uint8 /*xpSource*/) override
+    void OnGiveXP(Player* player, uint32& amount, Unit* /*victim*/, uint8 xpSource) override
     {
         if (IndividualXpEnabled)
         {
-            if (PlayerXpRate* data = player->CustomData.Get<PlayerXpRate>("IndividualXP"))
-                amount *= data->XPRate;
+            if (sChallengeModes->challengeEnabledForPlayer(SETTING_QUEST_XP_ONLY, player))
+            {
+                // If QuestXPOnly challenge is enabled, give 0.05 * XPRate XP on quests only, otherwise 0 XP
+                if (xpSource == XPSOURCE_QUEST)
+                {
+                    if (PlayerXpRate* data = player->CustomData.Get<PlayerXpRate>("IndividualXP"))
+                    {
+                        amount *= (data->XPRate * 0.1);
+                    }
+                }
+                else
+                {
+                    amount = 0;
+                }
+            }
+            else if (sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, player) ||
+                    sChallengeModes->challengeEnabledForPlayer(SETTING_SEMI_HARDCORE, player) ||
+                    sChallengeModes->challengeEnabledForPlayer(SETTING_SELF_CRAFTED, player) ||
+                    sChallengeModes->challengeEnabledForPlayer(SETTING_ITEM_QUALITY_LEVEL, player) ||
+                    sChallengeModes->challengeEnabledForPlayer(SETTING_SLOW_XP_GAIN, player) ||
+                    sChallengeModes->challengeEnabledForPlayer(SETTING_VERY_SLOW_XP_GAIN, player) ||
+                    sChallengeModes->challengeEnabledForPlayer(SETTING_IRON_MAN, player))
+            {
+                // If any other challenge mode is enabled, give 0.05 * XPRate XP
+                if (PlayerXpRate* data = player->CustomData.Get<PlayerXpRate>("IndividualXP"))
+                {
+                    amount *= (data->XPRate * 0.05);
+                }
+            }
+            else
+            {
+                // If no challenges are enabled, give XPRate XP
+                if (PlayerXpRate* data = player->CustomData.Get<PlayerXpRate>("IndividualXP"))
+                {
+                    amount *= data->XPRate;
+                }
+            }
         }
     }
-
 };
 
 class IndividualXPCommand : public CommandScript
@@ -254,7 +289,7 @@ public:
     }
 };
 
-void AddIndividualXPScripts()
+void AddIndividual_XPScripts()
 {
     new IndividualXPConf();
     new IndividualXpAnnounce();
